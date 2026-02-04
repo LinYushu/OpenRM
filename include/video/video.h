@@ -8,6 +8,27 @@
 
 namespace rm {
 
+bool getHikCameraNum(int &device_num);
+
+bool setHikArgs(
+    Camera *camera,
+    double exposure,
+    double gain,
+    double fps);
+
+bool openHik(
+    Camera *camera,
+    int device_num = 0, // 海康通常索引从0开始，具体看枚举顺序
+    float *yaw = nullptr,
+    float *pitch = nullptr,
+    float *roll = nullptr,
+    bool flip = false,
+    double exposure = 3000.0,
+    double gain = 8.0,
+    double fps = 200.0);
+
+bool closeHik();
+
 bool getDaHengCameraNum(int& device_num);
 
 bool setDaHengArgs(
