@@ -32,6 +32,6 @@ void rm::resize(
         jobs
     );
 
-    // 等待核函数执行完成
-    cudaStreamSynchronize(cuda_stream);
+    // // 等待核函数执行完成
+    // cudaStreamSynchronize(cuda_stream);
 }

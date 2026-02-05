@@ -176,6 +176,26 @@ bool rm::initCudaStream(
     }
 }
 
+bool rm::initCudaEvent(
+    cudaEvent_t *event,
+    unsigned int flags
+) {
+  try {
+    cudaSetDevice(0);
+    cudaError_t err = cudaEventCreateWithFlags(event, flags);
+    if (err != cudaSuccess) {
+      throw std::runtime_error("Failed to create event: " + std::string(cudaGetErrorString(err)));
+    }
+    rm::message("CUDA Event created", rm::MSG_OK);
+    return true;
+
+  } catch (const std::exception &e) {
+    std::string error_message = e.what();
+    rm::message("CUDA Event : " + error_message, rm::MSG_ERROR);
+    return false;
+  }
+}
+
 void rm::detectEnqueue(
     float* input_device_buffer,
     float* output_device_buffer,

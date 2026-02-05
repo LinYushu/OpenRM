@@ -26,6 +26,11 @@ bool initCudaStream(
     cudaStream_t* stream
 );
 
+bool initCudaEvent(
+    cudaEvent_t *event,
+    unsigned int flags = cudaEventDisableTiming
+);
+
 void detectEnqueue(
     float* input_device_buffer,
     float* output_device_buffer,
