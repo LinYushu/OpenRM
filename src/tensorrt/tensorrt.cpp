@@ -216,7 +216,8 @@ void rm::detectOutput(
     int bboxes_num,
     int batch_size
 ) {
-    size_t output_size = (output_struct_size * bboxes_num + 1) * batch_size;
+    size_t size_per_batch = (output_struct_size * bboxes_num + sizeof(float) + 255) & ~255;
+    size_t output_size = size_per_batch * batch_size;
     cudaMemcpyAsync(
         output_host_buffer,
         output_device_buffer,
@@ -224,7 +225,7 @@ void rm::detectOutput(
         cudaMemcpyDeviceToHost,
         *stream
     );
-    cudaStreamSynchronize(*stream);
+    // cudaStreamSynchronize(*stream);
 }
 
 void rm::detectOutputClassify(
@@ -268,8 +269,9 @@ void rm::mallocYoloDetectBuffer(
     int channels
 ) {
     cudaMalloc(reinterpret_cast<void**>(input_device_buffer), input_width * input_height * channels * batch_size * sizeof(float));
-    cudaMalloc(reinterpret_cast<void**>(output_device_buffer), (output_struct_size * bboxes_num + 1) * batch_size);
-    cudaMallocHost(reinterpret_cast<void**>(output_host_buffer), (output_struct_size * bboxes_num + 1) * batch_size);
+    size_t size_per_batch = (output_struct_size * bboxes_num + sizeof(float) + 255) & ~255;
+    cudaMalloc(reinterpret_cast<void**>(output_device_buffer), size_per_batch * batch_size);
+    cudaMallocHost(reinterpret_cast<void**>(output_host_buffer), size_per_batch * batch_size);
     rm::message("Yolo Detect Buffer allocated", rm::MSG_OK);
 }
 
@@ -333,11 +335,15 @@ void rm::memcpyYoloCameraBuffer(
     uint8_t* rgb_device_buffer,
     int rgb_width,
     int rgb_height,
+    cudaStream_t* stream,
     int channels
 ) {
     size_t rgb_size = rgb_width * rgb_height * channels * sizeof(uint8_t);
     memcpy(rgb_host_buffer, rgb_mat_data, rgb_size);
-    cudaMemcpy(rgb_device_buffer, rgb_host_buffer, rgb_size, cudaMemcpyHostToDevice);
+    if (stream)
+        cudaMemcpyAsync(rgb_device_buffer, rgb_host_buffer, rgb_size, cudaMemcpyHostToDevice, *stream);
+    else
+        cudaMemcpy(rgb_device_buffer, rgb_host_buffer, rgb_size, cudaMemcpyHostToDevice);
 }
 
 void rm::memcpyClassifyBuffer(

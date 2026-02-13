@@ -112,6 +112,7 @@ void memcpyYoloCameraBuffer(
     uint8_t* rgb_device_buffer,
     int rgb_width,
     int rgb_height,
+    cudaStream_t* stream = nullptr,
     int channels = 3
 );
 
