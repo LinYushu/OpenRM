@@ -13,7 +13,7 @@ using namespace rm;
 using namespace std;
 
 // 存储相机句柄的Map: device_index -> handle
-static std::map<int, void*> hik_cam_map;
+static std::map<rm::Camera *, void *> hik_cam_map;
 
 // 回调函数参数结构体
 struct HikCallbackParam {
@@ -61,7 +61,7 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
     stConvertParam.pDstBuffer = frame->image->data;
     stConvertParam.nDstBufferSize = pFrameInfo->nWidth * pFrameInfo->nHeight * 3;
 
-    void* handle = hik_cam_map[camera->camera_id];
+    void *handle = hik_cam_map[camera];
     int nRet = MV_CC_ConvertPixelType(handle, &stConvertParam);
     if (MV_OK != nRet) {
         rm::message("Video Hik callback convert pixel failed", rm::MSG_ERROR);
@@ -93,7 +93,7 @@ bool rm::getHikCameraNum(int& num) {
 
 // 设置相机参数
 bool rm::setHikArgs(Camera *camera, double exposure, double gain, double fps) {
-    void* handle = hik_cam_map[camera->camera_id];
+    void *handle = hik_cam_map[camera];
     int nRet = MV_OK;
 
     // 设置自动曝光/增益为Off，以便手动控制
@@ -137,7 +137,6 @@ bool rm::openHik(
         delete camera->buffer;
     }
     camera->buffer = new SwapBuffer<Frame>();
-    camera->camera_id = device_num;
 
     // 枚举设备以获取句柄创建所需的DeviceInfo
     MV_CC_DEVICE_INFO_LIST stDeviceList;
@@ -165,7 +164,7 @@ bool rm::openHik(
         return false;
     }
 
-    hik_cam_map[device_num] = handle;
+    hik_cam_map[camera] = handle;
 
     // 如果是GigE相机，建议设置包大小
     if (stDeviceList.pDeviceInfo[device_num]->nTLayerType == MV_GIGE_DEVICE) {
