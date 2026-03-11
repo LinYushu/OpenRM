@@ -3,3 +3,4 @@ build/
 demo/img/
 .vscode/
 .DS_Store
+include/video/hik/
