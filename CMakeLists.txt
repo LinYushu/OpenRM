@@ -28,6 +28,7 @@ find_package(CUDA)
 if (CUDA_FOUND)
     message(STATUS "CUDA Version: ${CUDA_VERSION}")
     include_directories(/usr/local/cuda/include)
+    link_directories(/usr/local/cuda/lib64)
 endif()
 
 # 设置主版本号、次版本号和补丁版本号
