@@ -8,6 +8,7 @@
 #include "video/video.h"
 #include "video/hik/MvCameraControl.h"
 #include "video/hik/PixelType.h"
+#include <opencv2/imgproc.hpp> // 【优化】确保引入OpenCV图像处理模块
 
 using namespace rm;
 using namespace std;
@@ -49,23 +50,31 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
     frame->pitch = pitch;
     frame->roll = roll;
 
-    // 像素格式转换 (海康原始数据 -> BGR)
-    // 即使是彩色相机，通常也是Bayer格式传输，需要转为BGR给OpenCV使用
-    MV_CC_PIXEL_CONVERT_PARAM stConvertParam = {0};
-    stConvertParam.nWidth = pFrameInfo->nWidth;
-    stConvertParam.nHeight = pFrameInfo->nHeight;
-    stConvertParam.pSrcData = pData;
-    stConvertParam.nSrcDataLen = pFrameInfo->nFrameLen;
-    stConvertParam.enSrcPixelType = pFrameInfo->enPixelType;
-    stConvertParam.enDstPixelType = PixelType_Gvsp_BGR8_Packed; // 转为OpenCV默认的BGR
-    stConvertParam.pDstBuffer = frame->image->data;
-    stConvertParam.nDstBufferSize = pFrameInfo->nWidth * pFrameInfo->nHeight * 3;
+    // 检查数据是否为 BayerRG8 格式 (0x01080009)
+    if (pFrameInfo->enPixelType == PixelType_Gvsp_BayerRG8) {
+        // 利用原始指针 pData 构建单通道 Mat（零拷贝，无内存开销）
+        cv::Mat raw_bayer(pFrameInfo->nHeight, pFrameInfo->nWidth, CV_8UC1, pData);
+        // 使用 OpenCV 高效 NEON 指令集转为 BGR 彩色图
+        cv::cvtColor(raw_bayer, *(frame->image), cv::COLOR_BayerRG2BGR);
+    } 
+    else {
+        // 容错回退机制：万一未应用Bayer，退回海康原厂慢速转换
+        MV_CC_PIXEL_CONVERT_PARAM stConvertParam = {0};
+        stConvertParam.nWidth = pFrameInfo->nWidth;
+        stConvertParam.nHeight = pFrameInfo->nHeight;
+        stConvertParam.pSrcData = pData;
+        stConvertParam.nSrcDataLen = pFrameInfo->nFrameLen;
+        stConvertParam.enSrcPixelType = pFrameInfo->enPixelType;
+        stConvertParam.enDstPixelType = PixelType_Gvsp_BGR8_Packed;
+        stConvertParam.pDstBuffer = frame->image->data;
+        stConvertParam.nDstBufferSize = pFrameInfo->nWidth * pFrameInfo->nHeight * 3;
 
-    void *handle = hik_cam_map[camera];
-    int nRet = MV_CC_ConvertPixelType(handle, &stConvertParam);
-    if (MV_OK != nRet) {
-        rm::message("Video Hik callback convert pixel failed", rm::MSG_ERROR);
-        return;
+        void *handle = hik_cam_map[camera];
+        int nRet = MV_CC_ConvertPixelType(handle, &stConvertParam);
+        if (MV_OK != nRet) {
+            rm::message("Video Hik callback convert pixel failed", rm::MSG_ERROR);
+            return;
+        }
     }
 
     // 处理翻转 (如果需要)
@@ -96,11 +105,18 @@ bool rm::setHikArgs(Camera *camera, double exposure, double gain, double fps) {
     void *handle = hik_cam_map[camera];
     int nRet = MV_OK;
 
-    // 设置自动曝光/增益为Off，以便手动控制
-    // 注意：不同型号相机节点名称可能略有差异，通常遵循GenICam标准
+    MV_CC_SetEnumValueByString(handle, "TriggerMode", "Off");
+    MV_CC_SetEnumValueByString(handle, "AcquisitionMode", "Continuous");
+
+    nRet = MV_CC_SetEnumValue(handle, "PixelFormat", PixelType_Gvsp_BayerRG8);
+    if (MV_OK != nRet) {
+        rm::message("Video Hik set PixelFormat to BayerRG8 failed, fallback to default", rm::MSG_WARNING);
+    }
+
+    // 设置自动曝光/增益为Off，开启最大帧率控制
     MV_CC_SetEnumValueByString(handle, "ExposureAuto", "Off");
     MV_CC_SetEnumValueByString(handle, "GainAuto", "Off");
-    MV_CC_SetEnumValueByString(handle, "AcquisitionFrameRateEnable", "true"); // 启用帧率控制
+    MV_CC_SetEnumValueByString(handle, "AcquisitionFrameRateEnable", "true");
 
     // 设置曝光时间 (单位: us)
     nRet = MV_CC_SetFloatValue(handle, "ExposureTime", static_cast<float>(exposure));
@@ -138,7 +154,7 @@ bool rm::openHik(
     }
     camera->buffer = new SwapBuffer<Frame>();
 
-    // 枚举设备以获取句柄创建所需的DeviceInfo
+    // 枚举设备
     MV_CC_DEVICE_INFO_LIST stDeviceList;
     memset(&stDeviceList, 0, sizeof(MV_CC_DEVICE_INFO_LIST));
     int nRet = MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, &stDeviceList);
@@ -175,19 +191,22 @@ bool rm::openHik(
         }
     }
 
-    // 获取图像宽高
+    // 设置参数 (包括曝光、Bayer配置等)
+    rm::setHikArgs(camera, exposure, gain, fps);
+
+    nRet = MV_CC_SetImageNodeNum(handle, 10);
+    if (MV_OK != nRet) {
+        rm::message("Video Hik set image node num failed", rm::MSG_WARNING);
+    }
+
+    // 获取图像宽高 (在设置完参数后获取，保证准确性)
     MVCC_INTVALUE stIntVal;
     MV_CC_GetIntValue(handle, "Width", &stIntVal);
     camera->width = stIntVal.nCurValue;
     MV_CC_GetIntValue(handle, "Height", &stIntVal);
     camera->height = stIntVal.nCurValue;
 
-    // 设置参数
-    rm::setHikArgs(camera, exposure, gain, fps);
-
     // 准备回调参数
-    // 注意：这里new出来的内存需要管理，简单起见在closeHik时不delete，
-    // 若需严格内存管理，可存在camera结构体中或使用shared_ptr
     HikCallbackParam* callback_param = new HikCallbackParam; 
     callback_param->camera = camera;
     callback_param->yaw = yaw_ptr;
