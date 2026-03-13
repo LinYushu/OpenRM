@@ -55,7 +55,7 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
         // 利用原始指针 pData 构建单通道 Mat（零拷贝，无内存开销）
         cv::Mat raw_bayer(pFrameInfo->nHeight, pFrameInfo->nWidth, CV_8UC1, pData);
         // 使用 OpenCV 高效 NEON 指令集转为 BGR 彩色图
-        cv::cvtColor(raw_bayer, *(frame->image), cv::COLOR_BayerRG2BGR);
+        cv::cvtColor(raw_bayer, *(frame->image), cv::COLOR_BayerRG2RGB);
     } 
     else {
         // 容错回退机制：万一未应用Bayer，退回海康原厂慢速转换
