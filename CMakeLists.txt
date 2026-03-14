@@ -29,6 +29,7 @@ if (CUDA_FOUND)
     message(STATUS "CUDA Version: ${CUDA_VERSION}")
     include_directories(/usr/local/cuda/include)
     link_directories(/usr/local/cuda/lib64)
+    include_directories(${CMAKE_SOURCE_DIR}/cuda/include)
 endif()
 
 # 设置主版本号、次版本号和补丁版本号

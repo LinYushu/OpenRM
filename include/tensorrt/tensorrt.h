@@ -7,6 +7,7 @@
 #include <string>
 #include "structure/stamp.hpp"
 #include "tensorrt/logging.h"
+#include "cudatools.h"
 
 namespace rm {
 
