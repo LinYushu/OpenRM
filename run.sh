@@ -26,7 +26,9 @@ setup_ldconfig() {
     sudo ldconfig
 }
 
-while getopts ":ritdg:" opt; do
+skip_build=0
+
+while getopts ":ritdg:k" opt; do
     case $opt in
         r)
             echo -e "${yellow}<<<--- rebuild --->>>\n${reset}"
@@ -45,8 +47,12 @@ while getopts ":ritdg:" opt; do
         t)
             echo -e "${yellow}<<<--- terminal --->>>\n${reset}"
             cd build
-            cmake ..
-            make -j "$max_threads"
+            if [ $skip_build -eq 0 ]; then
+                cmake ..
+                make -j "$max_threads"
+            else
+                echo -e "${yellow}\n<<<--- skip cmake & make --->>>\n${reset}"
+            fi
             sudo make install
             cd ..
             setup_ldconfig
@@ -55,8 +61,12 @@ while getopts ":ritdg:" opt; do
                 mkdir build
             fi
             cd build
-            cmake ..
-            make -j "$max_threads"
+            if [ $skip_build -eq 0 ]; then
+                cmake ..
+                make -j "$max_threads"
+            else
+                echo -e "${yellow}\n<<<--- skip terminal cmake & make --->>>\n${reset}"
+            fi
             sudo make install
             cd ../..
             sudo ldconfig
@@ -87,6 +97,9 @@ while getopts ":ritdg:" opt; do
             git push
             exit 0
             ;;
+        k)
+            skip_build=1
+            ;;
         \?)
             echo -e "${red}\n--- Unavailable param: -$OPTARG ---\n${reset}"
             ;;
@@ -96,12 +109,17 @@ while getopts ":ritdg:" opt; do
     esac
 done
 
-echo -e "${yellow}\n<<<--- start cmake --->>>\n${reset}"
 cd build
-cmake ..
 
-echo -e "${yellow}\n<<<--- start make --->>>\n${reset}"
-make -j "$max_threads"
+if [ $skip_build -eq 0 ]; then
+    echo -e "${yellow}\n<<<--- start cmake --->>>\n${reset}"
+    cmake ..
+
+    echo -e "${yellow}\n<<<--- start make --->>>\n${reset}"
+    make -j "$max_threads"
+else
+    echo -e "${yellow}\n<<<--- skip cmake & make (installing directly) --->>>\n${reset}"
+fi
 
 echo -e "${yellow}\n<<<--- start install --->>>\n${reset}"
 sudo make install
