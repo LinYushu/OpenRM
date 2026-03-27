@@ -8,7 +8,7 @@
 #include "video/video.h"
 #include "video/hik/MvCameraControl.h"
 #include "video/hik/PixelType.h"
-#include <opencv2/imgproc.hpp> // 【优化】确保引入OpenCV图像处理模块
+#include <opencv2/imgproc.hpp>
 
 using namespace rm;
 using namespace std;
@@ -76,11 +76,6 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
             return;
         }
     }
-
-    // // 处理翻转 (如果需要)
-    // if (callback_param->flip) {
-    //     cv::flip(*(frame->image), *(frame->image), -1);
-    // }
 
     camera->buffer->push(frame);
 }

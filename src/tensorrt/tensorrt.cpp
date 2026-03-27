@@ -271,8 +271,11 @@ void rm::mallocYoloDetectBuffer(
     cudaMalloc(reinterpret_cast<void**>(input_device_buffer), input_width * input_height * channels * batch_size * sizeof(float));
     size_t size_per_batch = (output_struct_size * bboxes_num + sizeof(float) + 255) & ~255;
     cudaMalloc(reinterpret_cast<void**>(output_device_buffer), size_per_batch * batch_size);
-    cudaMallocHost(reinterpret_cast<void**>(output_host_buffer), size_per_batch * batch_size);
-    rm::message("Yolo Detect Buffer allocated", rm::MSG_OK);
+    int max_output_num = 100; // 与线程中的数值保持一致
+    size_t compact_step_bytes = sizeof(int) + max_output_num * sizeof(rm::YoloDetectionRaw);
+    cudaMallocHost(reinterpret_cast<void**>(output_host_buffer), compact_step_bytes * batch_size);
+    
+    rm::message("Yolo Detect Buffer allocated (Optimized for CUDA NMS)", rm::MSG_OK);
 }
 
 void rm::mallocClassifyBuffer(
