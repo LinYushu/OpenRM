@@ -6,7 +6,7 @@ set(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
 enable_language(CUDA)
 
 # 设置 CUDA 架构
-set(CMAKE_CUDA_ARCHITECTURES 7.0 8.7)
+set(CMAKE_CUDA_ARCHITECTURES 7.2)
 
 # 添加CUDA编译选项
 set(CUDA_NVCC_PLAGS ${CUDA_NVCC_PLAGS};-std=c++14;-g;-G;-Xcompiler;-w)

@@ -77,10 +77,10 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
         }
     }
 
-    // 处理翻转 (如果需要)
-    if (callback_param->flip) {
-        cv::flip(*(frame->image), *(frame->image), -1);
-    }
+    // // 处理翻转 (如果需要)
+    // if (callback_param->flip) {
+    //     cv::flip(*(frame->image), *(frame->image), -1);
+    // }
 
     camera->buffer->push(frame);
 }
@@ -113,22 +113,25 @@ bool rm::setHikArgs(Camera *camera, double exposure, double gain, double fps) {
         rm::message("Video Hik set PixelFormat to BayerRG8 failed, fallback to default", rm::MSG_WARNING);
     }
 
-    // 设置自动曝光/增益为Off，开启最大帧率控制
     MV_CC_SetEnumValueByString(handle, "ExposureAuto", "Off");
     MV_CC_SetEnumValueByString(handle, "GainAuto", "Off");
-    MV_CC_SetEnumValueByString(handle, "AcquisitionFrameRateEnable", "true");
 
-    // 设置曝光时间 (单位: us)
+    nRet = MV_CC_SetBoolValue(handle, "AcquisitionFrameRateEnable", false);
+    if (MV_OK != nRet) rm::message("Video Hik disable FrameRate limitation failed", rm::MSG_WARNING);
+
+    MVCC_INTVALUE stParam;
+    memset(&stParam, 0, sizeof(MVCC_INTVALUE));
+    nRet = MV_CC_GetIntValue(handle, "DeviceLinkThroughputLimit", &stParam);
+    if (MV_OK == nRet) {
+        // 将带宽限制设置为相机支持的最大值
+        MV_CC_SetIntValue(handle, "DeviceLinkThroughputLimit", stParam.nMax);
+    }
     nRet = MV_CC_SetFloatValue(handle, "ExposureTime", static_cast<float>(exposure));
     if (MV_OK != nRet) rm::message("Video Hik set ExposureTime failed", rm::MSG_WARNING);
 
     // 设置增益 (单位: dB)
     nRet = MV_CC_SetFloatValue(handle, "Gain", static_cast<float>(gain));
     if (MV_OK != nRet) rm::message("Video Hik set Gain failed", rm::MSG_WARNING);
-
-    // 设置帧率
-    nRet = MV_CC_SetFloatValue(handle, "AcquisitionFrameRate", static_cast<float>(fps));
-    if (MV_OK != nRet) rm::message("Video Hik set FPS failed", rm::MSG_WARNING);
 
     return true;
 }
@@ -193,6 +196,15 @@ bool rm::openHik(
 
     // 设置参数 (包括曝光、Bayer配置等)
     rm::setHikArgs(camera, exposure, gain, fps);
+
+    // 将翻转任务交给相机 ISP，彻底解放 CPU
+    if (flip) {
+        MV_CC_SetBoolValue(handle, "ReverseX", true);
+        MV_CC_SetBoolValue(handle, "ReverseY", true);
+    } else {
+        MV_CC_SetBoolValue(handle, "ReverseX", false);
+        MV_CC_SetBoolValue(handle, "ReverseY", false);
+    }
 
     nRet = MV_CC_SetImageNodeNum(handle, 10);
     if (MV_OK != nRet) {
