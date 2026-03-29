@@ -38,10 +38,11 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
     }
 
     Camera *camera = callback_param->camera;
+    shared_ptr<Frame> frame = make_shared<Frame>();
     
     // 创建Frame对象
-    shared_ptr<Frame> frame = make_shared<Frame>();
     frame->image = make_shared<cv::Mat>(pFrameInfo->nHeight, pFrameInfo->nWidth, CV_8UC3);
+
     frame->time_point = time_stamp;
     frame->camera_id = camera->camera_id;
     frame->width = pFrameInfo->nWidth;
@@ -50,31 +51,11 @@ void __stdcall OnHikFrameCallback(unsigned char * pData, MV_FRAME_OUT_INFO_EX* p
     frame->pitch = pitch;
     frame->roll = roll;
 
-    // 检查数据是否为 BayerRG8 格式 (0x01080009)
     if (pFrameInfo->enPixelType == PixelType_Gvsp_BayerRG8) {
-        // 利用原始指针 pData 构建单通道 Mat（零拷贝，无内存开销）
         cv::Mat raw_bayer(pFrameInfo->nHeight, pFrameInfo->nWidth, CV_8UC1, pData);
-        // 使用 OpenCV 高效 NEON 指令集转为 BGR 彩色图
         cv::cvtColor(raw_bayer, *(frame->image), cv::COLOR_BayerRG2RGB);
-    } 
-    else {
-        // 容错回退机制：万一未应用Bayer，退回海康原厂慢速转换
-        MV_CC_PIXEL_CONVERT_PARAM stConvertParam = {0};
-        stConvertParam.nWidth = pFrameInfo->nWidth;
-        stConvertParam.nHeight = pFrameInfo->nHeight;
-        stConvertParam.pSrcData = pData;
-        stConvertParam.nSrcDataLen = pFrameInfo->nFrameLen;
-        stConvertParam.enSrcPixelType = pFrameInfo->enPixelType;
-        stConvertParam.enDstPixelType = PixelType_Gvsp_BGR8_Packed;
-        stConvertParam.pDstBuffer = frame->image->data;
-        stConvertParam.nDstBufferSize = pFrameInfo->nWidth * pFrameInfo->nHeight * 3;
-
-        void *handle = hik_cam_map[camera];
-        int nRet = MV_CC_ConvertPixelType(handle, &stConvertParam);
-        if (MV_OK != nRet) {
-            rm::message("Video Hik callback convert pixel failed", rm::MSG_ERROR);
-            return;
-        }
+    } else {
+        rm::message("Unexpected PixelFormat in Callback", rm::MSG_WARNING);
     }
 
     camera->buffer->push(frame);
@@ -103,30 +84,24 @@ bool rm::setHikArgs(Camera *camera, double exposure, double gain, double fps) {
     MV_CC_SetEnumValueByString(handle, "TriggerMode", "Off");
     MV_CC_SetEnumValueByString(handle, "AcquisitionMode", "Continuous");
 
-    nRet = MV_CC_SetEnumValue(handle, "PixelFormat", PixelType_Gvsp_BayerRG8);
+    nRet = MV_CC_SetEnumValue(handle, "PixelFormat", PixelType_Gvsp_BayerRG8); 
     if (MV_OK != nRet) {
         rm::message("Video Hik set PixelFormat to BayerRG8 failed, fallback to default", rm::MSG_WARNING);
     }
 
-    MV_CC_SetEnumValueByString(handle, "ExposureAuto", "Off");
-    MV_CC_SetEnumValueByString(handle, "GainAuto", "Off");
+    nRet = MV_CC_SetEnumValueByString(handle, "ExposureAuto", "Off");
+    nRet = MV_CC_SetEnumValueByString(handle, "GainAuto", "Off");
+    nRet = MV_CC_SetEnumValueByString(handle, "BalanceWhiteAuto", "Off");
 
-    nRet = MV_CC_SetBoolValue(handle, "AcquisitionFrameRateEnable", false);
-    if (MV_OK != nRet) rm::message("Video Hik disable FrameRate limitation failed", rm::MSG_WARNING);
-
-    MVCC_INTVALUE stParam;
-    memset(&stParam, 0, sizeof(MVCC_INTVALUE));
-    nRet = MV_CC_GetIntValue(handle, "DeviceLinkThroughputLimit", &stParam);
-    if (MV_OK == nRet) {
-        // 将带宽限制设置为相机支持的最大值
-        MV_CC_SetIntValue(handle, "DeviceLinkThroughputLimit", stParam.nMax);
-    }
+    // 设置曝光时间与增益
     nRet = MV_CC_SetFloatValue(handle, "ExposureTime", static_cast<float>(exposure));
     if (MV_OK != nRet) rm::message("Video Hik set ExposureTime failed", rm::MSG_WARNING);
-
-    // 设置增益 (单位: dB)
     nRet = MV_CC_SetFloatValue(handle, "Gain", static_cast<float>(gain));
     if (MV_OK != nRet) rm::message("Video Hik set Gain failed", rm::MSG_WARNING);
+    nRet = MV_CC_SetBoolValue(handle, "AcquisitionFrameRateEnable", true);
+    if (MV_OK != nRet) rm::message("Video Hik enable frame rate failed", rm::MSG_WARNING);
+    nRet = MV_CC_SetFloatValue(handle, "AcquisitionFrameRate", static_cast<float>(fps));
+    if (MV_OK != nRet) rm::message("Video Hik set fps failed", rm::MSG_WARNING);
 
     return true;
 }
@@ -192,16 +167,7 @@ bool rm::openHik(
     // 设置参数 (包括曝光、Bayer配置等)
     rm::setHikArgs(camera, exposure, gain, fps);
 
-    // 将翻转任务交给相机 ISP，彻底解放 CPU
-    if (flip) {
-        MV_CC_SetBoolValue(handle, "ReverseX", true);
-        MV_CC_SetBoolValue(handle, "ReverseY", true);
-    } else {
-        MV_CC_SetBoolValue(handle, "ReverseX", false);
-        MV_CC_SetBoolValue(handle, "ReverseY", false);
-    }
-
-    nRet = MV_CC_SetImageNodeNum(handle, 10);
+    nRet = MV_CC_SetImageNodeNum(handle, 40);
     if (MV_OK != nRet) {
         rm::message("Video Hik set image node num failed", rm::MSG_WARNING);
     }
